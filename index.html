@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Visualizador de Áudio Real - OBS</title>
+    <title>Visualizador de Áudio - Corrigido</title>
     <style>
         * {
             margin: 0;
@@ -11,7 +11,7 @@
             box-sizing: border-box;
         }
         body {
-            background: transparent; /* Mude para #121214 se quiser testar com fundo escuro */
+            background: #121214; /* Fundo escuro para você testar visualmente */
             overflow: hidden;
             display: flex;
             justify-content: center;
@@ -43,7 +43,6 @@
             const canvas = document.getElementById('visualizer');
             const canvasCtx = canvas.getContext('2d');
             
-            // Configurações das barras brancas identicas à foto original
             const barWidth = 3;
             const barGap = 2;
             const totalBarWidth = barWidth + barGap;
@@ -55,53 +54,44 @@
                 canvas.width = canvas.parentElement.clientWidth;
                 canvas.height = canvas.parentElement.clientHeight;
                 numberOfBars = Math.floor(canvas.width / totalBarWidth);
-                if (audioData.length === 0) {
+                if (audioData.length !== numberOfBars) {
                     audioData = new Array(numberOfBars).fill(0);
                 }
             }
             window.addEventListener('resize', resizeCanvas);
             resizeCanvas();
 
-            // Renderização contínua do Canvas
             function draw() {
                 requestAnimationFrame(draw);
                 
-                // Se estiver no OBS, pegamos as frequências reais direto da API do OBS
-                if (window.obsStudio && window.obsStudio.getAudioSpectrum) {
-                    // Retorna um array de frequências do áudio que está passando pela fonte
+                // CHECAGEM DE SEGURANÇA: Só roda se o objeto e a função existirem no OBS
+                if (typeof window.obsStudio !== 'undefined' && typeof window.obsStudio.getAudioSpectrum === 'function') {
                     const spectrum = window.obsStudio.getAudioSpectrum();
                     if (spectrum && spectrum.length > 0) {
                         for (let i = 0; i < numberOfBars; i++) {
-                            // Mapeia o espectro do OBS para o nosso número de barras
                             let specIndex = Math.floor((i / numberOfBars) * spectrum.length);
                             audioData[i] = spectrum[specIndex] || 0;
                         }
                     }
                 } else {
-                    // Modo de Simulação Suave para quando testar fora do OBS (Navegador Comum)
-                    // Cria uma onda que sobe e desce organicamente para simular música
+                    // Modo de Simulação Organica para o Navegador Comum (Não quebra mais!)
                     const time = Date.now() * 0.004;
                     for (let i = 0; i < numberOfBars; i++) {
                         let base = Math.sin(i * 0.05 - time) * Math.cos(i * 0.02 + time);
                         let wave = Math.abs(base) * (0.3 + Math.sin(time + i * 0.1) * 0.2);
-                        // Suaviza a transição para não dar saltos bruscos
                         audioData[i] = audioData[i] * 0.8 + wave * 0.2;
                     }
                 }
 
-                // Limpa a tela
+                // Limpa e redesenha o Canvas
                 canvasCtx.clearRect(0, 0, canvas.width, canvas.height);
                 const centerY = canvas.height / 2;
 
-                // Desenha as barras horizontais espelhadas
                 for (let i = 0; i < numberOfBars; i++) {
                     let magnitude = audioData[i];
-                    
-                    // Ajusta a altura da barra baseado na intensidade do áudio
                     let barHeight = magnitude * canvas.height * 0.9;
                     
-                    // Linha contínua mínima de 2px para quando estiver em silêncio
-                    if (barHeight < 2) barHeight = 2; 
+                    if (barHeight < 2) barHeight = 2; // Mantém a linha contínua em silêncio
 
                     const x = i * totalBarWidth;
                     canvasCtx.fillStyle = '#FFFFFF';
