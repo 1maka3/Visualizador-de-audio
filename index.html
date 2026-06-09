@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Visualizador Nativo OBS</title>
+    <title>Visualizador de Áudio Real - OBS</title>
     <style>
         * {
             margin: 0;
@@ -11,7 +11,7 @@
             box-sizing: border-box;
         }
         body {
-            background: #121214; /* Fundo escuro para teste visual */
+            background: transparent; /* Mude para #121214 se quiser testar com fundo escuro */
             overflow: hidden;
             display: flex;
             justify-content: center;
@@ -43,56 +43,64 @@
             const canvas = document.getElementById('visualizer');
             const canvasCtx = canvas.getContext('2d');
             
-            const numberOfBars = 60;
-            let dataArray = new Array(numberOfBars).fill(0);
-            let volumeSuave = 0;
+            // Configurações das barras brancas identicas à foto original
+            const barWidth = 3;
+            const barGap = 2;
+            const totalBarWidth = barWidth + barGap;
+            
+            let numberOfBars = 0;
+            let audioData = [];
 
             function resizeCanvas() {
                 canvas.width = canvas.parentElement.clientWidth;
                 canvas.height = canvas.parentElement.clientHeight;
+                numberOfBars = Math.floor(canvas.width / totalBarWidth);
+                if (audioData.length === 0) {
+                    audioData = new Array(numberOfBars).fill(0);
+                }
             }
             window.addEventListener('resize', resizeCanvas);
             resizeCanvas();
 
-            // Intercepta o áudio nativo que o OBS injeta diretamente na página
-            if (window.obsStudio && window.obsStudio.on) {
-                window.obsStudio.on('audioLevels', (levels) => {
-                    // levels[0] traz a estrutura de volume do canal esquerdo tocando no OBS
-                    if (levels && levels[0]) {
-                        // Captura a magnitude do som (vai de 0.0 a 1.0)
-                        volumeSuave = levels[0].magnitude || 0;
-                    }
-                });
-            } else {
-                // Simulação apenas para quando você testar fora do OBS (no Chrome comum)
-                setInterval(() => {
-                    volumeSuave = 0.1 + Math.random() * 0.4;
-                }, 80);
-            }
-
+            // Renderização contínua do Canvas
             function draw() {
                 requestAnimationFrame(draw);
-                canvasCtx.clearRect(0, 0, canvas.width, canvas.height);
-
-                const barWidth = 3;
-                const barGap = 2;
-                const totalBarWidth = barWidth + barGap;
-                const currentBars = Math.min(numberOfBars, Math.floor(canvas.width / totalBarWidth));
-                const centerY = canvas.height / 2;
-
-                // Amortece a queda para a movimentação ficar idêntica à imagem (suave)
-                if (!window.obsStudio) {
-                    volumeSuave *= 0.9;
+                
+                // Se estiver no OBS, pegamos as frequências reais direto da API do OBS
+                if (window.obsStudio && window.obsStudio.getAudioSpectrum) {
+                    // Retorna um array de frequências do áudio que está passando pela fonte
+                    const spectrum = window.obsStudio.getAudioSpectrum();
+                    if (spectrum && spectrum.length > 0) {
+                        for (let i = 0; i < numberOfBars; i++) {
+                            // Mapeia o espectro do OBS para o nosso número de barras
+                            let specIndex = Math.floor((i / numberOfBars) * spectrum.length);
+                            audioData[i] = spectrum[specIndex] || 0;
+                        }
+                    }
+                } else {
+                    // Modo de Simulação Suave para quando testar fora do OBS (Navegador Comum)
+                    // Cria uma onda que sobe e desce organicamente para simular música
+                    const time = Date.now() * 0.004;
+                    for (let i = 0; i < numberOfBars; i++) {
+                        let base = Math.sin(i * 0.05 - time) * Math.cos(i * 0.02 + time);
+                        let wave = Math.abs(base) * (0.3 + Math.sin(time + i * 0.1) * 0.2);
+                        // Suaviza a transição para não dar saltos bruscos
+                        audioData[i] = audioData[i] * 0.8 + wave * 0.2;
+                    }
                 }
 
-                for (let i = 0; i < currentBars; i++) {
-                    // Distribui o volume em formato de onda (senoide)
-                    let fatorForma = Math.sin((i / currentBars) * Math.PI);
+                // Limpa a tela
+                canvasCtx.clearRect(0, 0, canvas.width, canvas.height);
+                const centerY = canvas.height / 2;
+
+                // Desenha as barras horizontais espelhadas
+                for (let i = 0; i < numberOfBars; i++) {
+                    let magnitude = audioData[i];
                     
-                    // Multiplicador de ganho baseado no volume capturado
-                    let barHeight = (volumeSuave * 255) * fatorForma * (0.7 + Math.random() * 0.3);
+                    // Ajusta a altura da barra baseado na intensidade do áudio
+                    let barHeight = magnitude * canvas.height * 0.9;
                     
-                    // Mantém a linha central contínua mesmo se estiver em silêncio absoluto
+                    // Linha contínua mínima de 2px para quando estiver em silêncio
                     if (barHeight < 2) barHeight = 2; 
 
                     const x = i * totalBarWidth;
