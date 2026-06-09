@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Visualizador de Áudio - Corrigido</title>
+    <title>Visualizador de Áudio Oficial</title>
     <style>
         * {
             margin: 0;
@@ -11,7 +11,7 @@
             box-sizing: border-box;
         }
         body {
-            background: #121214; /* Fundo escuro para você testar visualmente */
+            background: #121214; /* Fundo escuro para enxergar a linha */
             overflow: hidden;
             display: flex;
             justify-content: center;
@@ -48,50 +48,44 @@
             const totalBarWidth = barWidth + barGap;
             
             let numberOfBars = 0;
-            let audioData = [];
+            let audioCtx = null;
+            let analyser = null;
+            let dataArray = null;
 
             function resizeCanvas() {
                 canvas.width = canvas.parentElement.clientWidth;
                 canvas.height = canvas.parentElement.clientHeight;
                 numberOfBars = Math.floor(canvas.width / totalBarWidth);
-                if (audioData.length !== numberOfBars) {
-                    audioData = new Array(numberOfBars).fill(0);
-                }
             }
             window.addEventListener('resize', resizeCanvas);
             resizeCanvas();
 
+            // Função que desenha a tela a cada frame
             function draw() {
                 requestAnimationFrame(draw);
                 
-                // CHECAGEM DE SEGURANÇA: Só roda se o objeto e a função existirem no OBS
-                if (typeof window.obsStudio !== 'undefined' && typeof window.obsStudio.getAudioSpectrum === 'function') {
-                    const spectrum = window.obsStudio.getAudioSpectrum();
-                    if (spectrum && spectrum.length > 0) {
-                        for (let i = 0; i < numberOfBars; i++) {
-                            let specIndex = Math.floor((i / numberOfBars) * spectrum.length);
-                            audioData[i] = spectrum[specIndex] || 0;
-                        }
-                    }
-                } else {
-                    // Modo de Simulação Organica para o Navegador Comum (Não quebra mais!)
-                    const time = Date.now() * 0.004;
-                    for (let i = 0; i < numberOfBars; i++) {
-                        let base = Math.sin(i * 0.05 - time) * Math.cos(i * 0.02 + time);
-                        let wave = Math.abs(base) * (0.3 + Math.sin(time + i * 0.1) * 0.2);
-                        audioData[i] = audioData[i] * 0.8 + wave * 0.2;
-                    }
+                const centerY = canvas.height / 2;
+                canvasCtx.clearRect(0, 0, canvas.width, canvas.height);
+
+                // Se o analisador estiver ativo, pega os dados reais de som
+                if (analyser) {
+                    analyser.getByteFrequencyData(dataArray);
                 }
 
-                // Limpa e redesenha o Canvas
-                canvasCtx.clearRect(0, 0, canvas.width, canvas.height);
-                const centerY = canvas.height / 2;
-
                 for (let i = 0; i < numberOfBars; i++) {
-                    let magnitude = audioData[i];
-                    let barHeight = magnitude * canvas.height * 0.9;
+                    let value = 0;
                     
-                    if (barHeight < 2) barHeight = 2; // Mantém a linha contínua em silêncio
+                    if (dataArray && analyser) {
+                        // Mapeia as frequências para o número de barras
+                        const dataIndex = Math.floor((i / numberOfBars) * analyser.frequencyBinCount);
+                        value = dataArray[dataIndex] || 0;
+                    }
+
+                    // Calcula a altura baseado no som real
+                    let barHeight = (value / 255) * (canvas.height * 0.85);
+                    
+                    // Se estiver em silêncio absoluto, vira uma linha reta de 2px
+                    if (barHeight < 2) barHeight = 2; 
 
                     const x = i * totalBarWidth;
                     canvasCtx.fillStyle = '#FFFFFF';
@@ -99,7 +93,39 @@
                 }
             }
 
+            // Ativa a captura de áudio padrão do sistema
+            function initAudio() {
+                if (audioCtx) return;
+
+                audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+                analyser = audioCtx.createAnalyser();
+                analyser.fftSize = 512;
+                analyser.smoothingTimeConstant = 0.8;
+                
+                dataArray = new Uint8Array(analyser.frequencyBinCount);
+
+                navigator.mediaDevices.getUserMedia({ 
+                    audio: {
+                        echoCancellation: false,
+                        noiseSuppression: false,
+                        autoGainControl: false
+                    }, 
+                    video: false 
+                })
+                .then(stream => {
+                    const source = audioCtx.createMediaStreamSource(stream);
+                    source.connect(analyser);
+                })
+                .catch(err => {
+                    console.error("Dispositivo de áudio não encontrado:", err);
+                });
+            }
+
+            // Inicia o desenho imediatamente (em silêncio/linha reta)
             draw();
+
+            // Ativa o áudio ao interagir (essencial para o OBS)
+            window.addEventListener('click', initAudio);
         });
     </script>
 </body>
