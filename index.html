@@ -31,61 +31,71 @@
     </div>
 
     <script>
-        window.onload = function() {
-            const canvas = document.getElementById('visualizer');
-            const canvasCtx = canvas.getContext('2d');
-            let audioCtx, analyser, dataArray, bufferLength;
+    window.onload = function() {
+        const canvas = document.getElementById('visualizer');
+        const canvasCtx = canvas.getContext('2d');
+        
+        // Array fixo para simular as frequências recebidas do OBS
+        let numberOfBars = 60;
+        let dataArray = new Array(numberOfBars).fill(0);
 
-            function resizeCanvas() {
-                canvas.width = canvas.parentElement.clientWidth;
-                canvas.height = canvas.parentElement.clientHeight;
-            }
-            window.addEventListener('resize', resizeCanvas);
-            resizeCanvas();
+        function resizeCanvas() {
+            canvas.width = canvas.parentElement.clientWidth;
+            canvas.height = canvas.parentElement.clientHeight;
+        }
+        window.addEventListener('resize', resizeCanvas);
+        resizeCanvas();
 
-            function initAudio() {
-                if (audioCtx) return;
-                audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-                analyser = audioCtx.createAnalyser();
-                analyser.fftSize = 512;
-                analyser.smoothingTimeConstant = 0.85; 
-                bufferLength = analyser.frequencyBinCount;
-                dataArray = new Uint8Array(bufferLength);
-
-                navigator.mediaDevices.getUserMedia({ audio: true, video: false })
-                    .then(stream => {
-                        const source = audioCtx.createMediaStreamSource(stream);
-                        source.connect(analyser);
-                        alert("Áudio iniciado! Agora toque música.");
-                        draw();
-                    })
-                    .catch(err => {
-                        console.error('Erro de áudio:', err);
-                        alert("Erro de áudio: " + err);
-                    });
-            }
-
-            function draw() {
-                requestAnimationFrame(draw);
-                analyser.getByteFrequencyData(dataArray);
-                canvasCtx.clearRect(0, 0, canvas.width, canvas.height);
-                const barWidth = 3, barGap = 2, totalBarWidth = barWidth + barGap;
-                const numberOfBars = Math.floor(canvas.width / totalBarWidth);
-                const centerY = canvas.height / 2;
-
+        // O PULO DO GATO: Escutar o volume que o próprio OBS injeta na página
+        // Esta função lê o nível de áudio (VU Meter) da própria fonte do OBS
+        if (window.obsStudio) {
+            window.obsStudio.on('audioLevels', function(levels) {
+                // levels[0] é o canal esquerdo, levels[1] é o direito
+                // Pegamos o volume atual (vai de 0 a 1)
+                let volume = levels[0] ? levels[0].magnitude : 0;
+                
+                // Atualiza o array de barras criando um efeito de onda com base no volume
                 for (let i = 0; i < numberOfBars; i++) {
-                    const dataIndex = Math.floor((i / numberOfBars) * bufferLength);
-                    let value = dataArray[dataIndex] || 0;
-                    let barHeight = (value / 255) * (canvas.height * 0.8);
-                    if (barHeight < 2) barHeight = 2;
-                    const x = i * totalBarWidth;
-                    canvasCtx.fillStyle = '#FFFFFF'; 
-                    canvasCtx.fillRect(x, centerY - barHeight / 2, barWidth, barHeight);
+                    // Cria uma variação suave para simular graves e agudos
+                    let factor = Math.sin((i / numberOfBars) * Math.PI);
+                    dataArray[i] = volume * 255 * factor * (0.8 + Math.random() * 0.2);
                 }
-            }
+            });
+        } else {
+            // Código de teste para quando você abrir no navegador comum (simula uma música tocando)
+            setInterval(() => {
+                let simulatedVolume = 0.2 + Math.random() * 0.5;
+                for (let i = 0; i < numberOfBars; i++) {
+                    let factor = Math.sin((i / numberOfBars) * Math.PI);
+                    dataArray[i] = simulatedVolume * 255 * factor;
+                }
+            }, 50);
+        }
 
-            window.addEventListener('click', initAudio);
-        };
-    </script>
+        function draw() {
+            requestAnimationFrame(draw);
+            canvasCtx.clearRect(0, 0, canvas.width, canvas.height);
+            
+            const barWidth = 3;
+            const barGap = 2;
+            const totalBarWidth = barWidth + barGap;
+            const currentBars = Math.min(numberOfBars, Math.floor(canvas.width / totalBarWidth));
+            const centerY = canvas.height / 2;
+
+            for (let i = 0; i < currentBars; i++) {
+                let value = dataArray[i] || 0;
+                let barHeight = (value / 255) * (canvas.height * 0.8);
+                
+                if (barHeight < 2) barHeight = 2; // Linha central contínua
+
+                const x = i * totalBarWidth;
+                canvasCtx.fillStyle = '#FFFFFF'; 
+                canvasCtx.fillRect(x, centerY - barHeight / 2, barWidth, barHeight);
+            }
+        }
+        
+        draw();
+    };
+</script>
 </body>
 </html>
