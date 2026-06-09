@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Visualizador - Teste Unificado</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { 
+            background: #111;
+            overflow: hidden; 
+            display: flex; 
+            justify-content: center; 
+            align-items: center; 
+            width: 100vw; 
+            height: 100vh; 
+        }
+        .visualizer-container { 
+            width: 90%; 
+            height: 150px; 
+            display: flex; 
+            align-items: center; 
+            justify-content: center; 
+        }
+        #visualizer { width: 100%; height: 100%; border: 1px solid red;}
+    </style>
+</head>
+<body>
+    <div class="visualizer-container">
+        <canvas id="visualizer"></canvas>
+    </div>
+
+    <script>
+        window.onload = function() {
+            const canvas = document.getElementById('visualizer');
+            const canvasCtx = canvas.getContext('2d');
+            let audioCtx, analyser, dataArray, bufferLength;
+
+            function resizeCanvas() {
+                canvas.width = canvas.parentElement.clientWidth;
+                canvas.height = canvas.parentElement.clientHeight;
+            }
+            window.addEventListener('resize', resizeCanvas);
+            resizeCanvas();
+
+            function initAudio() {
+                if (audioCtx) return;
+                audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+                analyser = audioCtx.createAnalyser();
+                analyser.fftSize = 512;
+                analyser.smoothingTimeConstant = 0.85; 
+                bufferLength = analyser.frequencyBinCount;
+                dataArray = new Uint8Array(bufferLength);
+
+                navigator.mediaDevices.getUserMedia({ audio: true, video: false })
+                    .then(stream => {
+                        const source = audioCtx.createMediaStreamSource(stream);
+                        source.connect(analyser);
+                        alert("Áudio iniciado! Agora toque música.");
+                        draw();
+                    })
+                    .catch(err => {
+                        console.error('Erro de áudio:', err);
+                        alert("Erro de áudio: " + err);
+                    });
+            }
+
+            function draw() {
+                requestAnimationFrame(draw);
+                analyser.getByteFrequencyData(dataArray);
+                canvasCtx.clearRect(0, 0, canvas.width, canvas.height);
+                const barWidth = 3, barGap = 2, totalBarWidth = barWidth + barGap;
+                const numberOfBars = Math.floor(canvas.width / totalBarWidth);
+                const centerY = canvas.height / 2;
+
+                for (let i = 0; i < numberOfBars; i++) {
+                    const dataIndex = Math.floor((i / numberOfBars) * bufferLength);
+                    let value = dataArray[dataIndex] || 0;
+                    let barHeight = (value / 255) * (canvas.height * 0.8);
+                    if (barHeight < 2) barHeight = 2;
+                    const x = i * totalBarWidth;
+                    canvasCtx.fillStyle = '#FFFFFF'; 
+                    canvasCtx.fillRect(x, centerY - barHeight / 2, barWidth, barHeight);
+                }
+            }
+
+            window.addEventListener('click', initAudio);
+        };
+    </script>
+</body>
+</html>
