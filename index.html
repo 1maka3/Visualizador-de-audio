@@ -3,11 +3,15 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Visualizador OBS WebSocket</title>
+    <title>Visualizador Nativo OBS</title>
     <style>
-        * { margin: 0; padding: 0; box-sizing: border-box; }
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
         body {
-            background: #121214; /* Cor escura de teste */
+            background: #121214; /* Fundo escuro para teste visual */
             overflow: hidden;
             display: flex;
             justify-content: center;
@@ -22,9 +26,11 @@
             align-items: center;
             justify-content: center;
         }
-        canvas { width: 100%; height: 100%; }
+        canvas {
+            width: 100%;
+            height: 100%;
+        }
     </style>
-    <script src="https://cdn.jsdelivr.net/npm/obs-websocket-js@5.0.5/dist/obs-websocket.js"></script>
 </head>
 <body>
 
@@ -36,11 +42,10 @@
         window.addEventListener('DOMContentLoaded', () => {
             const canvas = document.getElementById('visualizer');
             const canvasCtx = canvas.getContext('2d');
-            const obs = new OBSWebSocket();
-
-            let numberOfBars = 60;
+            
+            const numberOfBars = 60;
             let dataArray = new Array(numberOfBars).fill(0);
-            let currentVolume = 0;
+            let volumeSuave = 0;
 
             function resizeCanvas() {
                 canvas.width = canvas.parentElement.clientWidth;
@@ -49,29 +54,20 @@
             window.addEventListener('resize', resizeCanvas);
             resizeCanvas();
 
-            // Conecta ao OBS localmente
-            async function connectOBS() {
-                try {
-                    // Conecta no endereço padrão do OBS local
-                    await obs.connect('ws://127.0.0.1:4455');
-                    console.log('Conectado ao OBS com sucesso!');
-
-                    // Escuta as atualizações de áudio de todas as fontes do OBS
-                    obs.on('InputVolumeMeters', (data) => {
-                        // IMPORTANTE: Mude 'Áudio do Desktop' ou 'Spotify' para o NOME EXATO da sua fonte no OBS
-                        const spotifyInput = data.inputs.find(input => 
-                            input.inputName === 'Spotify' || input.inputName === 'Áudio do Desktop'
-                        );
-
-                        if (spotifyInput && spotifyInput.inputVolumeMul) {
-                            // Pega o volume atual (magnitude)
-                            currentVolume = spotifyInput.inputVolumeMul[0] || 0; 
-                        }
-                    });
-
-                } catch (error) {
-                    console.error('Erro ao conectar no OBS WebSocket:', error);
-                }
+            // Intercepta o áudio nativo que o OBS injeta diretamente na página
+            if (window.obsStudio && window.obsStudio.on) {
+                window.obsStudio.on('audioLevels', (levels) => {
+                    // levels[0] traz a estrutura de volume do canal esquerdo tocando no OBS
+                    if (levels && levels[0]) {
+                        // Captura a magnitude do som (vai de 0.0 a 1.0)
+                        volumeSuave = levels[0].magnitude || 0;
+                    }
+                });
+            } else {
+                // Simulação apenas para quando você testar fora do OBS (no Chrome comum)
+                setInterval(() => {
+                    volumeSuave = 0.1 + Math.random() * 0.4;
+                }, 80);
             }
 
             function draw() {
@@ -84,14 +80,19 @@
                 const currentBars = Math.min(numberOfBars, Math.floor(canvas.width / totalBarWidth));
                 const centerY = canvas.height / 2;
 
-                // Suaviza a queda do volume para não ficar piscando seco
-                currentVolume *= 0.92;
+                // Amortece a queda para a movimentação ficar idêntica à imagem (suave)
+                if (!window.obsStudio) {
+                    volumeSuave *= 0.9;
+                }
 
                 for (let i = 0; i < currentBars; i++) {
-                    // Cria uma onda matemática baseada no volume do OBS
-                    let factor = Math.sin((i / currentBars) * Math.PI);
-                    let barHeight = currentVolume * (canvas.height * 0.9) * factor * (0.7 + Math.random() * 0.3);
+                    // Distribui o volume em formato de onda (senoide)
+                    let fatorForma = Math.sin((i / currentBars) * Math.PI);
                     
+                    // Multiplicador de ganho baseado no volume capturado
+                    let barHeight = (volumeSuave * 255) * fatorForma * (0.7 + Math.random() * 0.3);
+                    
+                    // Mantém a linha central contínua mesmo se estiver em silêncio absoluto
                     if (barHeight < 2) barHeight = 2; 
 
                     const x = i * totalBarWidth;
@@ -100,7 +101,6 @@
                 }
             }
 
-            connectOBS();
             draw();
         });
     </script>
