@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Visualizador de Áudio Real</title>
+    <title>Visualizador de Audio</title>
     <style>
         * {
             margin: 0;
@@ -11,7 +11,7 @@
             box-sizing: border-box;
         }
         body {
-            background: transparent; /* Transparente para a live */
+            background: #121214; /* Cor escura para você ver que a página carregou e não está em branco */
             overflow: hidden;
             display: flex;
             justify-content: center;
@@ -39,7 +39,7 @@
     </div>
 
     <script>
-        window.onload = function() {
+        window.addEventListener('DOMContentLoaded', () => {
             const canvas = document.getElementById('visualizer');
             const canvasCtx = canvas.getContext('2d');
             
@@ -55,21 +55,36 @@
             window.addEventListener('resize', resizeCanvas);
             resizeCanvas();
 
-            // Inicializa o áudio de forma segura
-            function initAudio() {
-                if (audioCtx) return; // Evita inicializar duplicado se clicar várias vezes
+            // Desenha a linha estática inicial para você ver que o canvas existe
+            function drawStaticLine() {
+                canvasCtx.clearRect(0, 0, canvas.width, canvas.height);
+                const barWidth = 3;
+                const barGap = 2;
+                const totalBarWidth = barWidth + barGap;
+                const numberOfBars = Math.floor(canvas.width / totalBarWidth);
+                const centerY = canvas.height / 2;
 
-                audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+                for (let i = 0; i < numberOfBars; i++) {
+                    const x = i * totalBarWidth;
+                    canvasCtx.fillStyle = '#FFFFFF';
+                    canvasCtx.fillRect(x, centerY - 1, barWidth, 2);
+                }
+            }
+            drawStaticLine();
+
+            function initAudio() {
+                if (audioCtx) return;
+
+                const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+                audioCtx = new AudioContextClass();
                 analyser = audioCtx.createAnalyser();
                 
-                // Configurações para suavizar a onda (evita o efeito de piscar frenético)
                 analyser.fftSize = 256; 
                 analyser.smoothingTimeConstant = 0.82; 
                 
                 bufferLength = analyser.frequencyBinCount;
                 dataArray = new Uint8Array(bufferLength);
 
-                // Captura o som do sistema/microfone
                 navigator.mediaDevices.getUserMedia({ 
                     audio: {
                         echoCancellation: false,
@@ -84,48 +99,36 @@
                     draw();
                 })
                 .catch(err => {
-                    console.error("Erro ao acessar dispositivo de áudio:", err);
+                    console.error("Erro de áudio:", err);
                 });
             }
 
             function draw() {
                 requestAnimationFrame(draw);
-
-                // Captura os dados de frequência atuais
                 analyser.getByteFrequencyData(dataArray);
-
-                // Limpa o canvas de forma estável para evitar o "flicker" (piscar)
                 canvasCtx.clearRect(0, 0, canvas.width, canvas.height);
 
-                const barWidth = 3; // Largura das barras brancas
-                const barGap = 2;   // Espaço entre as barras
+                const barWidth = 3;
+                const barGap = 2;
                 const totalBarWidth = barWidth + barGap;
                 const numberOfBars = Math.floor(canvas.width / totalBarWidth);
                 const centerY = canvas.height / 2;
 
-                // Desenha a linha de forma centralizada e espelhada
                 for (let i = 0; i < numberOfBars; i++) {
-                    // Mapeia as frequências da música para preencher a tela horizontalmente
                     const dataIndex = Math.floor((i / numberOfBars) * bufferLength);
                     let value = dataArray[dataIndex] || 0;
-
-                    // Normaliza e amplifica o ganho para a batida da música
                     let barHeight = (value / 255) * (canvas.height * 0.85);
                     
-                    // Se estiver em silêncio, mantém a linha horizontal contínua de 2px de altura
                     if (barHeight < 2) barHeight = 2; 
 
                     const x = i * totalBarWidth;
-                    
-                    // Desenha a barra em branco sólido (idêntico à imagem original)
                     canvasCtx.fillStyle = '#FFFFFF';
                     canvasCtx.fillRect(x, centerY - barHeight / 2, barWidth, barHeight);
                 }
             }
 
-            // Escuta o clique na tela para ativar o áudio (exigência de segurança do navegador)
             window.addEventListener('click', initAudio);
-        };
+        });
     </script>
 </body>
 </html>
