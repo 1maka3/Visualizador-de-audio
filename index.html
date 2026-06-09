@@ -3,15 +3,11 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Visualizador de Áudio Oficial</title>
+    <title>Visualizador de Áudio - OBS Stream</title>
     <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
         body {
-            background: #121214; /* Fundo escuro para enxergar a linha */
+            background: transparent; /* Totalmente transparente para a live */
             overflow: hidden;
             display: flex;
             justify-content: center;
@@ -26,10 +22,7 @@
             align-items: center;
             justify-content: center;
         }
-        canvas {
-            width: 100%;
-            height: 100%;
-        }
+        canvas { width: 100%; height: 100%; }
     </style>
 </head>
 <body>
@@ -48,9 +41,7 @@
             const totalBarWidth = barWidth + barGap;
             
             let numberOfBars = 0;
-            let audioCtx = null;
-            let analyser = null;
-            let dataArray = null;
+            let currentVolume = 0;
 
             function resizeCanvas() {
                 canvas.width = canvas.parentElement.clientWidth;
@@ -60,32 +51,41 @@
             window.addEventListener('resize', resizeCanvas);
             resizeCanvas();
 
-            // Função que desenha a tela a cada frame
+            // Captura o áudio processado que o OBS injeta diretamente no widget
+            if (window.obsStudio && window.obsStudio.on) {
+                window.obsStudio.on('obsAudioLevel', (audioLevels) => {
+                    // audioLevels traz o volume de todos os canais ativos em formato de array de dB
+                    if (audioLevels && audioLevels.length > 0) {
+                        // Converte o pico de áudio de dB para uma escala linear (0.0 a 1.0)
+                        let db = audioLevels[0]; // Canal esquerdo/principal
+                        let linear = Math.pow(10, db / 20);
+                        currentVolume = linear;
+                    }
+                });
+            } else {
+                // Se estiver no navegador padrão (teste), faz uma oscilação bem leve
+                // para provar que a linha branca horizontal está renderizando
+                setInterval(() => {
+                    currentVolume = 0.02 + Math.random() * 0.03;
+                }, 100);
+            }
+
             function draw() {
                 requestAnimationFrame(draw);
-                
-                const centerY = canvas.height / 2;
                 canvasCtx.clearRect(0, 0, canvas.width, canvas.height);
+                const centerY = canvas.height / 2;
 
-                // Se o analisador estiver ativo, pega os dados reais de som
-                if (analyser) {
-                    analyser.getByteFrequencyData(dataArray);
-                }
+                // Suaviza a queda das barras para dar o efeito dinâmico clássico
+                currentVolume *= 0.92;
 
                 for (let i = 0; i < numberOfBars; i++) {
-                    let value = 0;
+                    // Desenha o formato de onda espelhado a partir do centro
+                    let fatorForma = Math.sin((i / numberOfBars) * Math.PI);
                     
-                    if (dataArray && analyser) {
-                        // Mapeia as frequências para o número de barras
-                        const dataIndex = Math.floor((i / numberOfBars) * analyser.frequencyBinCount);
-                        value = dataArray[dataIndex] || 0;
-                    }
-
-                    // Calcula a altura baseado no som real
-                    let barHeight = (value / 255) * (canvas.height * 0.85);
+                    // Amplifica o volume capturado para dar altura às barras brancas
+                    let barHeight = (currentVolume * 400) * fatorForma * (0.7 + Math.random() * 0.3);
                     
-                    // Se estiver em silêncio absoluto, vira uma linha reta de 2px
-                    if (barHeight < 2) barHeight = 2; 
+                    if (barHeight < 2) barHeight = 2; // Linha horizontal contínua
 
                     const x = i * totalBarWidth;
                     canvasCtx.fillStyle = '#FFFFFF';
@@ -93,39 +93,7 @@
                 }
             }
 
-            // Ativa a captura de áudio padrão do sistema
-            function initAudio() {
-                if (audioCtx) return;
-
-                audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-                analyser = audioCtx.createAnalyser();
-                analyser.fftSize = 512;
-                analyser.smoothingTimeConstant = 0.8;
-                
-                dataArray = new Uint8Array(analyser.frequencyBinCount);
-
-                navigator.mediaDevices.getUserMedia({ 
-                    audio: {
-                        echoCancellation: false,
-                        noiseSuppression: false,
-                        autoGainControl: false
-                    }, 
-                    video: false 
-                })
-                .then(stream => {
-                    const source = audioCtx.createMediaStreamSource(stream);
-                    source.connect(analyser);
-                })
-                .catch(err => {
-                    console.error("Dispositivo de áudio não encontrado:", err);
-                });
-            }
-
-            // Inicia o desenho imediatamente (em silêncio/linha reta)
             draw();
-
-            // Ativa o áudio ao interagir (essencial para o OBS)
-            window.addEventListener('click', initAudio);
         });
     </script>
 </body>
