@@ -3,99 +3,129 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Visualizador - Teste Unificado</title>
+    <title>Visualizador de Áudio Real</title>
     <style>
-        * { margin: 0; padding: 0; box-sizing: border-box; }
-        body { 
-            background: #111;
-            overflow: hidden; 
-            display: flex; 
-            justify-content: center; 
-            align-items: center; 
-            width: 100vw; 
-            height: 100vh; 
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
         }
-        .visualizer-container { 
-            width: 90%; 
-            height: 150px; 
-            display: flex; 
-            align-items: center; 
-            justify-content: center; 
+        body {
+            background: transparent; /* Transparente para a live */
+            overflow: hidden;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            width: 100vw;
+            height: 100vh;
         }
-        #visualizer { width: 100%; height: 100%; border: 1px solid red;}
+        .visualizer-container {
+            width: 95%;
+            height: 120px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        canvas {
+            width: 100%;
+            height: 100%;
+        }
     </style>
 </head>
 <body>
+
     <div class="visualizer-container">
         <canvas id="visualizer"></canvas>
     </div>
 
     <script>
-    window.onload = function() {
-        const canvas = document.getElementById('visualizer');
-        const canvasCtx = canvas.getContext('2d');
-        
-        // Array fixo para simular as frequências recebidas do OBS
-        let numberOfBars = 60;
-        let dataArray = new Array(numberOfBars).fill(0);
-
-        function resizeCanvas() {
-            canvas.width = canvas.parentElement.clientWidth;
-            canvas.height = canvas.parentElement.clientHeight;
-        }
-        window.addEventListener('resize', resizeCanvas);
-        resizeCanvas();
-
-        // O PULO DO GATO: Escutar o volume que o próprio OBS injeta na página
-        // Esta função lê o nível de áudio (VU Meter) da própria fonte do OBS
-        if (window.obsStudio) {
-            window.obsStudio.on('audioLevels', function(levels) {
-                // levels[0] é o canal esquerdo, levels[1] é o direito
-                // Pegamos o volume atual (vai de 0 a 1)
-                let volume = levels[0] ? levels[0].magnitude : 0;
-                
-                // Atualiza o array de barras criando um efeito de onda com base no volume
-                for (let i = 0; i < numberOfBars; i++) {
-                    // Cria uma variação suave para simular graves e agudos
-                    let factor = Math.sin((i / numberOfBars) * Math.PI);
-                    dataArray[i] = volume * 255 * factor * (0.8 + Math.random() * 0.2);
-                }
-            });
-        } else {
-            // Código de teste para quando você abrir no navegador comum (simula uma música tocando)
-            setInterval(() => {
-                let simulatedVolume = 0.2 + Math.random() * 0.5;
-                for (let i = 0; i < numberOfBars; i++) {
-                    let factor = Math.sin((i / numberOfBars) * Math.PI);
-                    dataArray[i] = simulatedVolume * 255 * factor;
-                }
-            }, 50);
-        }
-
-        function draw() {
-            requestAnimationFrame(draw);
-            canvasCtx.clearRect(0, 0, canvas.width, canvas.height);
+        window.onload = function() {
+            const canvas = document.getElementById('visualizer');
+            const canvasCtx = canvas.getContext('2d');
             
-            const barWidth = 3;
-            const barGap = 2;
-            const totalBarWidth = barWidth + barGap;
-            const currentBars = Math.min(numberOfBars, Math.floor(canvas.width / totalBarWidth));
-            const centerY = canvas.height / 2;
+            let audioCtx = null;
+            let analyser = null;
+            let dataArray = null;
+            let bufferLength = 0;
 
-            for (let i = 0; i < currentBars; i++) {
-                let value = dataArray[i] || 0;
-                let barHeight = (value / 255) * (canvas.height * 0.8);
-                
-                if (barHeight < 2) barHeight = 2; // Linha central contínua
-
-                const x = i * totalBarWidth;
-                canvasCtx.fillStyle = '#FFFFFF'; 
-                canvasCtx.fillRect(x, centerY - barHeight / 2, barWidth, barHeight);
+            function resizeCanvas() {
+                canvas.width = canvas.parentElement.clientWidth;
+                canvas.height = canvas.parentElement.clientHeight;
             }
-        }
-        
-        draw();
-    };
-</script>
+            window.addEventListener('resize', resizeCanvas);
+            resizeCanvas();
+
+            // Inicializa o áudio de forma segura
+            function initAudio() {
+                if (audioCtx) return; // Evita inicializar duplicado se clicar várias vezes
+
+                audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+                analyser = audioCtx.createAnalyser();
+                
+                // Configurações para suavizar a onda (evita o efeito de piscar frenético)
+                analyser.fftSize = 256; 
+                analyser.smoothingTimeConstant = 0.82; 
+                
+                bufferLength = analyser.frequencyBinCount;
+                dataArray = new Uint8Array(bufferLength);
+
+                // Captura o som do sistema/microfone
+                navigator.mediaDevices.getUserMedia({ 
+                    audio: {
+                        echoCancellation: false,
+                        noiseSuppression: false,
+                        autoGainControl: false
+                    }, 
+                    video: false 
+                })
+                .then(stream => {
+                    const source = audioCtx.createMediaStreamSource(stream);
+                    source.connect(analyser);
+                    draw();
+                })
+                .catch(err => {
+                    console.error("Erro ao acessar dispositivo de áudio:", err);
+                });
+            }
+
+            function draw() {
+                requestAnimationFrame(draw);
+
+                // Captura os dados de frequência atuais
+                analyser.getByteFrequencyData(dataArray);
+
+                // Limpa o canvas de forma estável para evitar o "flicker" (piscar)
+                canvasCtx.clearRect(0, 0, canvas.width, canvas.height);
+
+                const barWidth = 3; // Largura das barras brancas
+                const barGap = 2;   // Espaço entre as barras
+                const totalBarWidth = barWidth + barGap;
+                const numberOfBars = Math.floor(canvas.width / totalBarWidth);
+                const centerY = canvas.height / 2;
+
+                // Desenha a linha de forma centralizada e espelhada
+                for (let i = 0; i < numberOfBars; i++) {
+                    // Mapeia as frequências da música para preencher a tela horizontalmente
+                    const dataIndex = Math.floor((i / numberOfBars) * bufferLength);
+                    let value = dataArray[dataIndex] || 0;
+
+                    // Normaliza e amplifica o ganho para a batida da música
+                    let barHeight = (value / 255) * (canvas.height * 0.85);
+                    
+                    // Se estiver em silêncio, mantém a linha horizontal contínua de 2px de altura
+                    if (barHeight < 2) barHeight = 2; 
+
+                    const x = i * totalBarWidth;
+                    
+                    // Desenha a barra em branco sólido (idêntico à imagem original)
+                    canvasCtx.fillStyle = '#FFFFFF';
+                    canvasCtx.fillRect(x, centerY - barHeight / 2, barWidth, barHeight);
+                }
+            }
+
+            // Escuta o clique na tela para ativar o áudio (exigência de segurança do navegador)
+            window.addEventListener('click', initAudio);
+        };
+    </script>
 </body>
 </html>
